@@ -1,0 +1,21 @@
+pkgname=frisk
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A lightweight Rust package manager"
+arch=('x86_64')
+url="https://github.com/EnvizyWasTaken/frisk"
+license=('MIT')
+makedepends=('cargo')
+
+source=("https://github.com/EnvizyWasHere/frisk/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/frisk-$pkgver"
+    cargo build --release --locked
+}
+
+package() {
+    cd "$srcdir/frisk-$pkgver"
+    install -Dm755 target/release/frisk "$pkgdir/usr/bin/frisk"
+}
