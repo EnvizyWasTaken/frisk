@@ -2,6 +2,10 @@
 
 `frisk` is a lightweight Linux package manager prototype written in Rust.
 
+## Warning !
+`frisk` only supports rust packages and it is a project that i work on in my free time, improvements and support for more languages will come but i cant guarantee its goinna work properly
+-EnvizyWasTaken
+
 ## Supported sources
 
 - GitHub releases: `frisk github -g owner/repo`
