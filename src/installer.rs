@@ -47,15 +47,13 @@ pub async fn install_from_archive(
         .and_then(|m| m.version.clone())
         .or(fallback_version);
     
-    let install_root = temp_dir()?.join(format!("pkg-{}", name));
+    let install_root = data_dir()?.join("packages").join(&name);
 
     if install_root.exists() {
         fs::remove_dir_all(&install_root).await?;
     }
 
-    fs::rename(&extract_root, &install_root).await?;
-
-    let binaries = collect_binaries(&extract_root, manifest.as_ref())?;
+    let binaries = collect_binaries(&install_root, manifest.as_ref())?;
     if binaries.is_empty() {
         return Err(anyhow!("no executable files found in extracted package"));
     }
@@ -99,7 +97,7 @@ async fn install_binaries(
             .ok_or_else(|| anyhow!("binary has invalid file name: {}", binary.display()))?
             .to_string();
         let installed_path = create_wrapper(&file_name, &binary).await?;
-        installed_files.push(installed_files.to_string_lossy().to_string());
+        installed_files.push(installed_files.to_string_lossy().to_string());  
         installed_bin_names.push(file_name);
     }
 
@@ -120,11 +118,11 @@ async fn create_wrapper(bin_name: &str, target: &Path) -> Result<PathBuf> {
         target.display()
     );
 
-    fs::wrote(&wrapper_path, content).await()?;
+    fs::write(&wrapper_path, content).await()?;
 
     let mut perms = fs::metadata(&wrapper_path).await?.permissions();
     perms.set_mode(0o755);
-    fs::set_permissions(&wrapper_path, path).await?;
+    fs::set_permissions(&wrapper_path, perms).await?;
 
     Ok(wrapper_path)
 }
@@ -250,7 +248,7 @@ fn has_shebang(path: &Path) -> Result<bool> {
     let mut reader = BufReader::new(file);
 
     let mut first_line = String::new();
-    reader.read_line(&mut read_line)?;
+    reader.read_line(&mut first_line)?;
 
     Ok(first_line.starts_with("#!"))
 }
