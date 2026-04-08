@@ -1,21 +1,32 @@
 pkgname=frisk
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="A lightweight Rust package manager"
+pkgdesc="Minimal Linux package manager written in Rust"
 arch=('x86_64')
 url="https://github.com/EnvizyWasTaken/frisk"
 license=('MIT')
-makedepends=('cargo')
 
-source=("https://github.com/EnvizyWasHere/frisk/archive/refs/tags/v$pkgver.tar.gz")
+depends=()
+makedepends=('cargo' 'clang')
+
+source=("$pkgname-$pkgver.tar.gz::https://github.com/EnvizyWasTaken/frisk/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
+prepare() {
+    cd "$pkgname-$pkgver"
+    cargo fetch --locked
+}
+
 build() {
-    cd "$srcdir/frisk-$pkgver"
-    cargo build --release --locked
+    cd "$pkgname-$pkgver"
+
+    # Force clang instead of gcc (fixes ring + lld issue)
+    export CC=clang
+
+    cargo build --release --frozen
 }
 
 package() {
-    cd "$srcdir/frisk-$pkgver"
+    cd "$pkgname-$pkgver"
     install -Dm755 target/release/frisk "$pkgdir/usr/bin/frisk"
 }

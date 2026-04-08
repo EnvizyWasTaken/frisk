@@ -34,6 +34,7 @@ pub async fn install_from_archive(
     }
     fs::create_dir_all(&extract_root).await?;
     extract_by_extension(archive_path, &extract_root)?;
+    run_install_script(&extract_root).await?;
 
     let manifest = read_manifest_if_present(&extract_root).await?;
     let name = manifest
@@ -45,6 +46,14 @@ pub async fn install_from_archive(
         .as_ref()
         .and_then(|m| m.version.clone())
         .or(fallback_version);
+    
+    let install_root = temp_dir()?.join(format!("pkg-{}", name));
+
+    if install_root.exists() {
+        fs::remove_dir_all(&install_root).await?;
+    }
+
+    fs::rename(&extract_root, &install_root).await?;
 
     let binaries = collect_binaries(&extract_root, manifest.as_ref())?;
     if binaries.is_empty() {
@@ -89,16 +98,8 @@ async fn install_binaries(
             .and_then(|f| f.to_str())
             .ok_or_else(|| anyhow!("binary has invalid file name: {}", binary.display()))?
             .to_string();
-        let destination = bin_dir()?.join(&file_name);
-        fs::copy(&binary, &destination)
-            .await
-            .with_context(|| format!("failed to install {}", file_name))?;
-
-        let mut perms = fs::metadata(&destination).await?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&destination, perms).await?;
-
-        installed_files.push(destination.to_string_lossy().to_string());
+        let installed_path = create_wrapper(&file_name, &binary).await?;
+        installed_files.push(installed_files.to_string_lossy().to_string());
         installed_bin_names.push(file_name);
     }
 
@@ -109,6 +110,23 @@ async fn install_binaries(
         installed_files,
         installed_bin_names,
     })
+}
+
+async fn create_wrapper(bin_name: &str, target: &Path) -> Result<PathBuf> {
+    let wrapper_path = bin_dir()?.join(bin_name);
+
+    let content = format!(
+        "#!/bin/sh\nexec \"{}\" \"$@\"\n",
+        target.display()
+    );
+
+    fs::wrote(&wrapper_path, content).await()?;
+
+    let mut perms = fs::metadata(&wrapper_path).await?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&wrapper_path, path).await?;
+
+    Ok(wrapper_path)
 }
 
 pub async fn remove_installed_package(package: &InstalledPackage) -> Result<()> {
@@ -132,6 +150,26 @@ async fn read_manifest_if_present(extract_root: &Path) -> Result<Option<FriskMan
         }
     }
     Ok(None)
+}
+
+async fn run_install_script(extract_root: &Path) -> Result<()> {
+    use tokio::process::Command;
+
+    let install_sh = extract_root.join("install.sh");
+
+    if install_sh.exists() {
+        let status = Command::new("sh")
+            .arg(&install_sh)
+            .current_dir(extract_root)
+            .status()
+            .await?;
+
+        if !status.success() {
+            return Err(anyhow!("install.sh failed!"));
+        }
+    }
+
+    Ok(())
 }
 
 fn collect_binaries(extract_root: &Path, manifest: Option<&FriskManifest>) -> Result<Vec<PathBuf>> {
@@ -195,9 +233,26 @@ fn is_probable_binary(path: &Path, name: &str) -> Result<bool> {
     let mode = metadata.permissions().mode();
     if mode & 0o111 != 0 {
         return Ok(true);
+
     }
 
-    Ok(path.parent().map(|p| p.ends_with("bin") || p.ends_with("payload")).unwrap_or(false))
+    if has_shebang(path)? {
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn has_shebang(path: &Path) -> Result<bool> {
+    use std::io::{BufRead, BufReader};
+
+    let file = std::fs::File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    let mut first_line = String::new();
+    reader.read_line(&mut read_line)?;
+
+    Ok(first_line.starts_with("#!"))
 }
 
 fn infer_name_from_archive(archive_path: &Path) -> String {
